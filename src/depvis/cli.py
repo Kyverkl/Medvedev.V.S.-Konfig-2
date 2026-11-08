@@ -1,4 +1,4 @@
-"""CLI entry point (stage 4: reverse dependencies)."""
+"""CLI entry point."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from depvis.graph import (
     reverse_dependencies,
 )
 from depvis.test_repo import RepoFormatError, load_test_repo
+from depvis.viz import to_ascii_tree, to_mermaid
 
 
 EXIT_OK = 0
@@ -67,29 +68,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _run(
-    config: Config, direct_only: bool, reverse: bool
-) -> int:
+def _run(config: Config, direct_only: bool, reverse: bool) -> int:
     """Execute selected operating mode."""
     get_deps, roots = _make_source(config)
     if direct_only:
         return _print_direct(config.package, get_deps)
-    graph = _build_full_graph(
-        config.package, get_deps, roots, reverse
-    )
+    graph = _build_full_graph(config.package, get_deps, roots, reverse)
     if reverse:
         return _print_reverse(graph, config.package)
-    cycles = find_cycles(graph)
-    if cycles:
-        print("Cycles detected:")
-        for cycle in cycles:
-            print("  " + " -> ".join(cycle))
-        print()
-    print("Dependency graph:")
-    for src, deps in sorted(graph.items()):
-        joined = ", ".join(deps) if deps else "(none)"
-        print(f"  {src} -> {joined}")
-    return EXIT_OK
+    return _print_graph(graph, config)
 
 
 def _print_direct(package: str, get_deps) -> int:
@@ -114,8 +101,30 @@ def _print_reverse(graph: dict, package: str) -> int:
     return EXIT_OK
 
 
+def _print_graph(graph: dict, config: Config) -> int:
+    """Print cycles, Mermaid and optional ASCII tree."""
+    cycles = find_cycles(graph)
+    if cycles:
+        print("Cycles detected:")
+        for cycle in cycles:
+            print("  " + " -> ".join(cycle))
+        print()
+    print(to_mermaid(graph, config.package))
+    print()
+    if config.ascii_tree:
+        print("ASCII tree:")
+        print(to_ascii_tree(graph, config.package))
+    return EXIT_OK
+
+
 def _build_full_graph(package, get_deps, roots, reverse: bool):
-    """Build graph; merge all roots for reverse mode."""
+    """
+    Build transitive graph from package.
+
+    For reverse mode with a known full root set, merge
+    subgraphs so reverse edges outside the package subtree
+    are visible.
+    """
     if reverse and roots:
         merged: dict = {}
         for root in roots:

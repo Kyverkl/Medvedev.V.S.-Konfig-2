@@ -1,3 +1,4 @@
+# Пример конфигурации depvis (вариант 18)
 package = "A"
 repository = "fixtures/graph_simple.txt"
 test_mode = true

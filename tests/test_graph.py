@@ -1,6 +1,10 @@
-"""Tests for iterative DFS graph builder."""
+"""Тесты DFS и обратных зависимостей."""
 
-from depvis.graph import build_transitive_graph, find_cycles
+from depvis.graph import (
+    build_transitive_graph,
+    find_cycles,
+    reverse_dependencies,
+)
 
 
 def test_simple_tree() -> None:
@@ -24,3 +28,15 @@ def test_cycle_detected() -> None:
     graph = build_transitive_graph("A", get_deps)
     cycles = find_cycles(graph)
     assert cycles
+
+
+def test_reverse_deps() -> None:
+    graph = {
+        "A": ["B"],
+        "B": ["C"],
+        "D": ["C"],
+        "E": ["B", "C"],
+        "C": [],
+    }
+    parents = reverse_dependencies(graph, "C")
+    assert set(parents) == {"A", "B", "D", "E"}

@@ -1,4 +1,4 @@
-"""Build dependency graph with iterative DFS."""
+"""Построение графа зависимостей: итеративный DFS."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 
 class GraphError(Exception):
-    """Graph construction or traversal error."""
+    """Ошибка построения или обхода графа."""
 
 
 WHITE = 0
@@ -19,12 +19,15 @@ def build_transitive_graph(
     get_deps: Callable[[str], list[str]],
 ) -> dict[str, list[str]]:
     """
-    Build dependency graph via non-recursive DFS.
+    Строит граф зависимостей обходом DFS без рекурсии.
 
-    Cyclic edges are kept; gray nodes are not re-entered.
+    get_deps(name) — прямые зависимости пакета.
+    Циклические зависимости сохраняются как рёбра,
+    повторный заход в серый узел не выполняется.
     """
     graph: dict[str, list[str]] = {}
     color: dict[str, int] = {root: GRAY}
+    # стек кадров: (узел, индекс_следующего_ребёнка)
     stack: list[tuple[str, int]] = [(root, 0)]
 
     while stack:
@@ -40,6 +43,7 @@ def build_transitive_graph(
             if state == WHITE:
                 color[child] = GRAY
                 stack.append((child, 0))
+            # GRAY — цикл, BLACK — уже полностью обойдён
             continue
 
         color[node] = BLACK
@@ -51,7 +55,7 @@ def build_transitive_graph(
 def _safe_deps(
     get_deps: Callable[[str], list[str]], name: str
 ) -> list[str]:
-    """Call get_deps and return empty list on failure."""
+    """Вызов get_deps с защитой от ошибок источника."""
     try:
         return list(get_deps(name))
     except Exception:
@@ -59,7 +63,7 @@ def _safe_deps(
 
 
 def find_cycles(graph: dict[str, list[str]]) -> list[list[str]]:
-    """Return list of detected cycles."""
+    """Возвращает список найденных циклов."""
     cycles: list[list[str]] = []
     color = {node: WHITE for node in graph}
     parents: dict[str, str | None] = {}
@@ -78,9 +82,7 @@ def find_cycles(graph: dict[str, list[str]]) -> list[list[str]]:
                 stack[-1] = (node, idx + 1)
                 state = color.get(child, WHITE)
                 if state == GRAY:
-                    cycles.append(
-                        _cycle_path(parents, node, child)
-                    )
+                    cycles.append(_cycle_path(parents, node, child))
                 elif state == WHITE:
                     color[child] = GRAY
                     parents[child] = node
@@ -94,7 +96,7 @@ def find_cycles(graph: dict[str, list[str]]) -> list[list[str]]:
 def _cycle_path(
     parents: dict[str, str | None], node: str, back: str
 ) -> list[str]:
-    """Rebuild cycle path ending with back edge."""
+    """Восстанавливает путь цикла node -> ... -> back -> node."""
     path = [back]
     cur: str | None = node
     while cur is not None and cur != back:
@@ -109,9 +111,8 @@ def reverse_dependencies(
     graph: dict[str, list[str]], target: str
 ) -> list[str]:
     """
-    Packages that depend on target (transitively).
-
-    Iterative DFS on the reversed edge list.
+    Пакеты, зависящие от target (транзитивно).
+    Итеративный DFS по обратному графу.
     """
     reverse: dict[str, list[str]] = {}
     for src, deps in graph.items():
