@@ -103,3 +103,32 @@ def _cycle_path(
     path.append(back)
     path.reverse()
     return path
+
+
+def reverse_dependencies(
+    graph: dict[str, list[str]], target: str
+) -> list[str]:
+    """
+    Packages that depend on target (transitively).
+
+    Iterative DFS on the reversed edge list.
+    """
+    reverse: dict[str, list[str]] = {}
+    for src, deps in graph.items():
+        reverse.setdefault(src, [])
+        for dep in deps:
+            reverse.setdefault(dep, []).append(src)
+
+    result: list[str] = []
+    seen: set[str] = {target}
+    stack: list[str] = [target]
+    while stack:
+        node = stack.pop()
+        for parent in reverse.get(node, []):
+            if parent in seen:
+                continue
+            seen.add(parent)
+            result.append(parent)
+            stack.append(parent)
+    result.sort()
+    return result

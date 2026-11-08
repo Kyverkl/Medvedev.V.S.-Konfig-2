@@ -1,4 +1,4 @@
-"""CLI entry point (stage 3: full graph, DFS, cycles)."""
+"""CLI entry point (stage 4: reverse dependencies)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ import sys
 
 from depvis.cargo import CargoError, fetch_direct_deps
 from depvis.config import Config, ConfigError, dump_config, load_config
-from depvis.graph import build_transitive_graph, find_cycles
+from depvis.graph import (
+    build_transitive_graph,
+    find_cycles,
+    reverse_dependencies,
+)
 from depvis.test_repo import RepoFormatError, load_test_repo
 
 
@@ -27,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         print(dump_config(config))
         return EXIT_OK
     try:
-        return _run(config, args.direct_only)
+        return _run(config, args.direct_only, args.reverse)
     except (RepoFormatError, CargoError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -55,15 +59,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="print direct dependencies only",
     )
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="print reverse dependencies",
+    )
     return parser.parse_args(argv)
 
 
-def _run(config: Config, direct_only: bool) -> int:
+def _run(
+    config: Config, direct_only: bool, reverse: bool
+) -> int:
     """Execute selected operating mode."""
-    get_deps = _make_get_deps(config)
+    get_deps, roots = _make_source(config)
     if direct_only:
         return _print_direct(config.package, get_deps)
-    graph = build_transitive_graph(config.package, get_deps)
+    graph = _build_full_graph(
+        config.package, get_deps, roots, reverse
+    )
+    if reverse:
+        return _print_reverse(graph, config.package)
     cycles = find_cycles(graph)
     if cycles:
         print("Cycles detected:")
@@ -88,8 +103,31 @@ def _print_direct(package: str, get_deps) -> int:
     return EXIT_OK
 
 
-def _make_get_deps(config: Config):
-    """Return function that lists direct dependencies."""
+def _print_reverse(graph: dict, package: str) -> int:
+    """Print packages that depend on package."""
+    parents = reverse_dependencies(graph, package)
+    print(f"Reverse dependencies of {package}:")
+    if not parents:
+        print("  (none)")
+    for name in parents:
+        print(f"  - {name}")
+    return EXIT_OK
+
+
+def _build_full_graph(package, get_deps, roots, reverse: bool):
+    """Build graph; merge all roots for reverse mode."""
+    if reverse and roots:
+        merged: dict = {}
+        for root in roots:
+            part = build_transitive_graph(root, get_deps)
+            for key, deps in part.items():
+                merged.setdefault(key, deps)
+        return merged
+    return build_transitive_graph(package, get_deps)
+
+
+def _make_source(config: Config):
+    """Return (get_deps, all_roots_or_empty)."""
     if config.test_mode:
         repo = load_test_repo(config.repository)
         if config.package not in repo:
@@ -100,9 +138,9 @@ def _make_get_deps(config: Config):
         def from_test(name: str) -> list[str]:
             return list(repo.get(name, []))
 
-        return from_test
+        return from_test, list(repo.keys())
 
     def from_cargo(name: str) -> list[str]:
         return fetch_direct_deps(name, config.repository)
 
-    return from_cargo
+    return from_cargo, []
