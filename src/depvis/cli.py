@@ -1,4 +1,4 @@
-"""CLI entry point (stage 2: direct dependencies)."""
+"""CLI entry point (stage 3: full graph, DFS, cycles)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import sys
 
 from depvis.cargo import CargoError, fetch_direct_deps
 from depvis.config import Config, ConfigError, dump_config, load_config
+from depvis.graph import build_transitive_graph, find_cycles
 from depvis.test_repo import RepoFormatError, load_test_repo
 
 
@@ -26,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         print(dump_config(config))
         return EXIT_OK
     try:
-        return _run_direct(config)
+        return _run(config, args.direct_only)
     except (RepoFormatError, CargoError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -49,14 +50,37 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="print parameters and exit",
     )
+    parser.add_argument(
+        "--direct-only",
+        action="store_true",
+        help="print direct dependencies only",
+    )
     return parser.parse_args(argv)
 
 
-def _run_direct(config: Config) -> int:
-    """Print direct dependencies of the configured package."""
+def _run(config: Config, direct_only: bool) -> int:
+    """Execute selected operating mode."""
     get_deps = _make_get_deps(config)
-    deps = get_deps(config.package)
-    print(f"Direct dependencies of {config.package}:")
+    if direct_only:
+        return _print_direct(config.package, get_deps)
+    graph = build_transitive_graph(config.package, get_deps)
+    cycles = find_cycles(graph)
+    if cycles:
+        print("Cycles detected:")
+        for cycle in cycles:
+            print("  " + " -> ".join(cycle))
+        print()
+    print("Dependency graph:")
+    for src, deps in sorted(graph.items()):
+        joined = ", ".join(deps) if deps else "(none)"
+        print(f"  {src} -> {joined}")
+    return EXIT_OK
+
+
+def _print_direct(package: str, get_deps) -> int:
+    """Print direct dependencies list."""
+    deps = get_deps(package)
+    print(f"Direct dependencies of {package}:")
     if not deps:
         print("  (none)")
     for name in deps:
